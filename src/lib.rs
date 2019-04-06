@@ -1,4 +1,4 @@
-use std::any::TypeId;
+use std::any::{Any, TypeId};
 use std::collections::HashMap;
 use std::mem;
 
@@ -27,6 +27,14 @@ impl TypedEventRouter {
             };
             f(event);
         }
+    }
+
+    pub fn emit_any(&mut self, mut event: Box<Any>) -> Box<Any> {
+        for listener in self.topics.get_mut(&(*event).type_id()).unwrap() {
+            let f: &mut Box<FnMut(&mut Any)> = unsafe { mem::transmute(listener) };
+            f(&mut (*event));
+        }
+        event
     }
 
     pub fn make_portable_handler<T: 'static>(f: impl FnMut(&mut T)) -> PortableTypedEventHandler {
@@ -72,6 +80,16 @@ mod tests {
         assert!(foo.x == 45);
         assert!(bar.y == 27);
         assert!(baz.z == 95);
+    }
+
+    #[test]
+    fn emit_any() {
+        use std::any::Any;
+	let mut r = TypedEventRouter::new();
+	r.subscribe(|e: &mut Foo| { e.x += 1; });
+        let foo: Box<Any> = Box::new(Foo { x: 0 });
+        let foo = r.emit_any(foo);
+        assert!(foo.downcast::<Foo>().unwrap().x == 1);
     }
 }
 
