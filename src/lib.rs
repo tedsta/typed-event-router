@@ -2,6 +2,8 @@ use std::any::TypeId;
 use std::collections::HashMap;
 use std::mem;
 
+pub struct PortableTypedEventHandler(TypeId, Box<FnMut(&mut ())>);
+
 pub struct TypedEventRouter {
     topics: HashMap<TypeId, Vec<Box<FnMut(&mut ())>>>
 }
@@ -14,10 +16,8 @@ impl TypedEventRouter {
     }
     
     pub fn subscribe<T: 'static>(&mut self, f: impl FnMut(&mut T)) {
-        let f: Box<FnMut(&mut T)> = Box::new(f); // Need this or compiler cries
-        let f = unsafe { mem::transmute(f) };
-        let listeners = self.topics.entry(TypeId::of::<T>()).or_default();
-        listeners.push(f);
+        let f = Self::make_portable_handler(f);
+        self.subscribe_portable(f);
     }
     
     pub fn emit<T: 'static>(&mut self, event: &mut T) {
@@ -27,6 +27,17 @@ impl TypedEventRouter {
             };
             f(event);
         }
+    }
+
+    pub fn make_portable_handler<T: 'static>(f: impl FnMut(&mut T)) -> PortableTypedEventHandler {
+        let f: Box<FnMut(&mut T)> = Box::new(f); // Need this or compiler cries
+        PortableTypedEventHandler(TypeId::of::<T>(), unsafe { mem::transmute(f) })
+    }
+
+    pub fn subscribe_portable(&mut self, f: PortableTypedEventHandler) {
+        let PortableTypedEventHandler(type_id, f) = f;
+        let listeners = self.topics.entry(type_id).or_default();
+        listeners.push(f);
     }
 }
 
